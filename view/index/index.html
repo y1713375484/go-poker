@@ -1,0 +1,450 @@
+{{define "index.html"}}
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title></title>
+    <script src="/public/static/js/jq/jquery.min.js"></script>
+    <style>
+        li{
+            list-style: none;
+        }
+
+        *{
+            margin: 0px;
+            padding: 0px;
+        }
+
+        .poker-li{
+            border: 2px dashed black;
+            width: 4rem;
+            padding-top: 1%;
+            padding-bottom: 3%;
+            float: left;
+            margin-left: 1%;
+            height: 2.5rem;
+        }
+
+        #cp_btn{
+            width: 5rem;
+            display: inline-block;
+            height: 3rem;
+        }
+
+        #not_btn{
+            width: 5rem;
+            height: 3rem;
+            display: inline-block;
+        }
+
+    </style>
+</head>
+<body>
+<div id="time-box" style="display: none;">您还有<span id="time" style="color: red"></span>秒出牌时间</div>
+
+
+<!--游戏准备区域-->
+<div id="ready-box" style="margin-top: 2%;margin-left: 2%">
+    <p>当前房间号为：<span style="color: red">{{.room}}</span></p>
+    <p id="hint"></p>
+    设置游戏昵称<input type="text" id="name">
+    <button id="btn">游戏准备</button>
+    <button id="qxbtn" disabled="disabled">取消准备</button>
+</div>
+
+
+<!--游戏开始显示区域-->
+<form class="my-box" style="margin-top: 2%;margin-left: 2%;display: none">
+    <ul class="poker-box" >
+
+    </ul>
+
+    <input type="button" value="出牌" id="cp_btn" style="display: none">
+    <input type="button" value="不要" id="not_btn" style="display: none">
+
+
+    <div style="clear: both"></div>
+</form>
+
+
+<!--玩家所出的牌展示区域-->
+<div class="sent-poker" style="margin-top: 2%;margin-left: 2%;display: none">
+    <ul id="gamerName">
+        <li style="color: red">玩家列表：</li>
+
+    </ul>
+    <p style="text-align: center">正在等待<span id="now_playerId" style="color: red"></span>号玩家出牌</p>
+    <p>来自<span id="playerId" style="color: red"></span>号玩家的出牌：</p>
+    <!--出的牌-->
+    <ul class="sent-poker-box">
+
+
+
+    </ul>
+
+</div>
+
+
+
+<script>
+
+
+
+
+
+
+     var ws = new WebSocket("{{.url}}");
+     //var ws=new WebSocket("ws://127.0.0.1:7373");
+     var room={{.room}};//房间号
+     var interval;//定时器
+
+    ws.onmessage = function(e){
+        console.log(e.data)
+        var data=JSON.parse(e.data)
+        var type=data.type
+        switch (type){
+
+
+            case "state"://判断游戏状态
+                state(data)
+            return;
+
+
+
+            case "gamerName"://渲染房间内玩家信息
+                 $(".sent-poker").css("display","block")
+
+
+                var array=data.names;
+                for(var key in array){
+                    $("#gamerName").append("<li>"+key+"号玩家："+array[key]+"</li>")
+                }
+
+            return;
+
+            case "send_poker"://来自服务器的发牌、回合结束后胜利玩家牌的补充
+                $("#ready-box").css("display","none")
+                $(".my-box").css("display","block")
+
+                var array=data.poker;
+
+
+
+                if ($(".poker-box").children().length>0){
+                        //后续发的新牌
+                        var arr=[];
+                        var tag;//标记用来存储当前的牌适合插入的地方
+                        $(".poker").each(function (){
+                            var v=$(this).val();
+                            arr.push(v);
+                        })
+
+
+                    for(var key in array){
+
+                        for (var i=0;i<arr.length;i++){
+                            if (array[key]<=arr[i]){
+                                //找到比自己牌值大的下标，记录并退出
+                                tag=i;
+                                break;
+                            }else {
+                                tag=i+1;
+                            }
+                        }
+
+                        if (tag==arr.length){
+                            //如果比当前所有牌都大，那么就添加到最后
+                            $(".poker-box").append("" +
+                                "<li class='poker-li'>" +
+                                "<span class='poker-style'>" + key + "</span><input type='checkbox' value='" + array[key] + "' class='poker' name='poker'>" +
+                                "</li>")
+
+                        }else {
+                            $(".poker-li").eq(tag).before("" +
+                                "<li class='poker-li'>"+
+                                "<span class='poker-style'>"+key+"</span><input type='checkbox' value='"+array[key]+"' class='poker' name='poker'>"+
+                                "</li>")
+                        }
+
+
+                    }
+                    }else {
+                    for(var key in array) {
+                        //第一次发牌，poker-box元素下无子元素
+                        $(".poker-box").append("" +
+                            "<li class='poker-li'>" +
+                            "<span class='poker-style'>" + key + "</span><input type='checkbox' value='" + array[key] + "' class='poker' name='poker'>" +
+                            "</li>")
+                    }
+                    }
+
+
+            return;
+
+            case "now_sent_poker"://服务器发给玩家 “你的回合”
+                var times=data.time
+                var auto;
+                //赋初值5
+                if (times!=undefined){
+                    $("#time-box").css("display","block")
+                    $("#time").text(times);
+                    interval = setInterval(function() {
+                        var j = $("#time").text();
+                        if (j == 1) {
+                            //终止
+                            clearInterval(interval);
+                            $("#time-box").css("display","none")
+                            return false;
+                        }
+                        var i = j - 1;
+                        $("#time").text(i);
+
+                    }, 1000);//1秒刷新1次倒计时
+                }
+
+                ws.send(JSON.stringify({"type":"now_sent_poker","room":room}))
+                //到当前回合解锁操作按钮
+                $("#cp_btn").css("display","inline-block")
+                $("#not_btn").css("display","inline-block")
+
+            return;
+
+
+            case "now_gamer"://服务器告诉发送给房间现在正在等待谁出牌
+
+                var now_gamer_id=data.now_gamer_id
+                $("#now_playerId").text(now_gamer_id)
+
+            return;
+
+            case "disband"://有玩家断开连接，服务器给客户端发送游戏终止标识
+
+                alert("当前房间有玩家退出了游戏，请刷新页面后重新开始游戏")
+
+            return;
+
+            case "sent_poker"://渲染出牌区域
+                var prevPoker=data.prevPoker;
+                var playerId=data.id
+                $("#playerId").text(playerId)
+                $(".sent-poker-box").html("")//清空
+
+                for(var key in prevPoker){
+                    $(".sent-poker-box").append("" +
+                        "<li class='poker-li'>"+
+                        "<span class='poker-style'>"+key+"</span>"+
+                        "</li>")
+                }
+
+            return;
+
+            case "game_over"://游戏结束
+
+                var victory_id=data.victory_id;
+                alert("游戏结束,"+victory_id+"号玩家获得了游戏的胜利,请刷新后开始新游戏")
+
+            return;
+
+            case "skip"://超过出牌时间，跳过出牌阶段s
+                $("#cp_btn").css("display","none")
+                $("#not_btn").css("display","none")
+            return;
+
+
+        }
+    }
+
+
+    ws.onclose = function(e){
+
+
+
+    }
+    ws.onerror = function(e){
+
+    }
+
+
+    //当客户端被刷新
+
+    window.onbeforeunload = function(){
+           console.log("客户端被刷新");
+          if (ws.readyState==1){
+
+            //确保与服务器连接才发送消息
+            $.ajax({
+                url: '{:route("close")}',
+                data: {"room":room},
+                type: "POST",
+                dataType: "json",
+            });
+         }
+
+    }
+
+
+
+
+    //进入房间后判断游戏状态
+    function state(data) {
+        switch (data.code){
+
+            case 2:
+                $("#hint").html("人数不足")
+                $("#btn").attr("disabled",true);
+                $("#qxbtn").attr("disabled",false);
+                return;
+
+            case -1:
+                $("#hint").html("房间已满")
+                return;
+
+            case -2:
+                $("#hint").html("当前id正在游戏中，换个id后重试...")
+                return;
+        }
+    }
+
+
+    //点击申请加入房间
+    $("#btn").click(function(){
+        var name=$("#name").val()
+
+        if (ws.readyState==1){
+            $.ajax({
+                url: '/api/joinRoom',
+                data:JSON.stringify({"room":room,"name":name}),
+                type: "POST",
+                dataType: "json",
+            });
+        }else {
+            alert("未与服务器建立连接，请刷新后重试")
+        }
+
+
+
+    });
+
+
+    //出牌
+    $("#cp_btn").click(function () {
+        var chk_value =[];
+        var chk_poker=[];
+        var li_order=[];
+        $('input[name="poker"]:checked').each(function(){
+            // chk_value.push($(this).val());
+            //var pokerIndex=$(this).val();//牌对应的值
+            var poker=$(this).prev(".poker-style").text();//牌
+            var pokerIndex=$(this).val()
+            chk_value.push(Number(pokerIndex))
+            chk_poker.push(poker)
+
+            li_order.push($(this).parent(".poker-li").index())
+
+        });
+
+        li_order.sort(function(a, b){return b - a})//降序排序先删靠后元素不影响靠前元素
+
+        if (chk_value.length==0){
+            alert("请选择要出的牌")
+        }else {
+
+            console.log(chk_value)
+            console.log(chk_poker)
+            var msg={"room":room,"chk_poker_index":chk_value,"chk_poker":chk_poker}
+
+            $.ajax({
+                url: '/api/sentPoker',
+                data: JSON.stringify(msg),
+                type: "POST",
+                dataType: "json",
+                success: function (res) {
+
+                    if (res.code>0){
+
+                        for (var i=0;i<li_order.length;i++){
+                            $(".poker-li").eq(li_order[i]).remove()//循环删除元素
+                        }
+                        //出牌成功后隐藏操作按钮
+                        $("#cp_btn").css("display","none")
+                        $("#not_btn").css("display","none")
+
+                        //隐藏、关闭倒计时
+                        clearInterval(interval);
+                         $("#time-box").css("display","none")
+
+                        ws.send(JSON.stringify({"type":"action","room":room}))
+
+                    }else {
+                        alert(res.message)
+                    }
+                }
+            });
+
+
+
+        }
+    })
+
+
+    //不出
+    $("#not_btn").click(function (){
+
+        var msg={"type":"not-poker","room":room}
+
+
+        $.ajax({
+            url: '/api/notPoker',
+            data: JSON.stringify(msg),
+            type: "POST",
+            dataType: "json",
+            success: function (res) {
+
+                if (res.code>0){
+                    //出牌后隐藏操作按钮
+                    $("#cp_btn").css("display","none")
+                    $("#not_btn").css("display","none")
+                    //隐藏、关闭倒计时
+                    clearInterval(interval);
+                     $("#time-box").css("display","none")
+                    ws.send(JSON.stringify({"type":"action","room":room}))
+                }else {
+                    alert(res.message)
+                }
+
+            }
+        });
+
+
+    })
+
+
+
+    //取消准备
+    $("#qxbtn").click(function () {
+        var message={"room":room};
+        $.ajax({
+            url: '{:route("cancel")}',
+            data: message,
+            type: "POST",
+            dataType: "json",
+            // success: function (res) {
+            //
+            // }
+        });
+
+        $("#btn").attr("disabled",false);
+        $("#hint").html("");
+        $("#qxbtn").attr("disabled",true);
+
+    })
+
+
+
+</script>
+
+</body>
+</html>
+{{end}}
